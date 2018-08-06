@@ -40,9 +40,9 @@ public class DynamicAMLST extends ModuleBase {
 					MediaListRendition rendition = new MediaListRendition();
 					segment.addRendition(rendition);
 					rendition.setName("mp4:" + res);
+					rendition.setTitle("" + info.getCodecInfoVideo().getFrameHeight());
 					rendition.setBitrateAudio(info.getAudioBitrate());
-					rendition.setBitrateVideo(info.getVideoBitrateAverage());
-					
+					rendition.setBitrateVideo(info.getVideoBitrateAverage());					
 					rendition.setWidth(info.getCodecInfoVideo().getFrameWidth());
 					rendition.setHeight(info.getCodecInfoVideo().getFrameHeight());
 					rendition.setAudioCodecId(info.getCodecInfoAudio().toCodecsStr());

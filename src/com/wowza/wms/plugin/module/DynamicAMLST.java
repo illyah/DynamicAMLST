@@ -2,16 +2,15 @@ package com.wowza.wms.plugin.module;
 
 import com.wowza.wms.medialist.*;
 import com.wowza.wms.module.*;
-import com.wowza.wms.request.RequestFunction;
 import com.wowza.wms.stream.*;
-import com.wowza.wms.amf.AMFDataList;
+import com.wowza.util.HTTPUtils;
 import com.wowza.wms.application.*;
-import com.wowza.wms.client.IClient;
 import com.wowza.wms.httpstreamer.cupertinostreaming.file.HTTPStreamerCupertinoIndexFile;
 import com.wowza.wms.httpstreamer.cupertinostreaming.file.IHTTPStreamerCupertinoIndex;
 import com.wowza.wms.httpstreamer.cupertinostreaming.file.IMediaReaderCupertino;
 import com.wowza.wms.httpstreamer.model.IHTTPStreamerSession;
 import java.util.List;
+import java.util.Map;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -19,27 +18,49 @@ import java.util.Iterator;
 public class DynamicAMLST extends ModuleBase {
 	
 	private IApplicationInstance appIns = null;
-	private IMediaReaderCupertino mediaReader = null;
+	private IMediaReaderCupertino mediaReader = null; 
+	public static final String PROPERTY_format = "format";
 	
 	class MyMediaListProvider implements IMediaListProvider
 	{
 		public MediaList resolveMediaList(IMediaListReader mediaListReader, IMediaStream stream, String streamName)
-		{
-			List<String> renditions = getRenditions(streamName);
+		{		
+			getLogger().warn("DynamicAMLST.resolveMediaList");
+			
+			String formatStr = "default";
+			IHTTPStreamerSession HTTPClient = null;
+			
+			try {HTTPClient = stream.getHTTPStreamerSession(); } catch (Exception client) {}
+			
+			if (HTTPClient != null) 
+			{
+				String queryStr = HTTPClient.getQueryStr();
+				Map<String, String> queryParams = HTTPUtils.splitQueryStr(queryStr);
+	
+				String indexStr = PROPERTY_format;
+				
+				if (queryParams.containsKey(indexStr))
+				{
+					formatStr = queryParams.get(indexStr) != null ? queryParams.get(indexStr) : "default";
+					if(formatStr.isEmpty()) { formatStr =  "default"; }
+				}
+			}
+			
+			List<String> renditions = getRenditions(streamName, formatStr);
 			MediaList mediaList = new MediaList();
 			MediaListSegment segment = new MediaListSegment();
 			mediaList.addSegment(segment);
-			
+						
 			Iterator<String> iter = renditions.iterator(); 
 			while(iter.hasNext())
 			{
 				String res = iter.next(); 
+			
 				IHTTPStreamerCupertinoIndex info = readMedia(stream, res);
 				if(info != null)
 				{
 					MediaListRendition rendition = new MediaListRendition();
-					segment.addRendition(rendition);
-					rendition.setName("mp4:" + res);
+					rendition.setName(res);
 					rendition.setTitle("" + info.getCodecInfoVideo().getFrameHeight());
 					rendition.setBitrateAudio(info.getAudioBitrate());
 					rendition.setBitrateVideo(info.getVideoBitrateAverage());					
@@ -47,6 +68,7 @@ public class DynamicAMLST extends ModuleBase {
 					rendition.setHeight(info.getCodecInfoVideo().getFrameHeight());
 					rendition.setAudioCodecId(info.getCodecInfoAudio().toCodecsStr());
 					rendition.setVideoCodecId(info.getCodecInfoVideo().toCodecsStr());
+					segment.addRendition(rendition);		
 				}
 			}
 
@@ -61,55 +83,26 @@ public class DynamicAMLST extends ModuleBase {
 		appInstance.setMediaListProvider(new MyMediaListProvider());
 	}
 	
-	public void onAppStop(IApplicationInstance appInstance)
-	{
-		getLogger().info("onAppStop: DynamicAMLST");
-	}
 	
-	public void onConnect(IClient client, RequestFunction function, AMFDataList params) {
-		getLogger().info("onConnect: " + client.getClientId());
-	}
-
-	public void onConnectAccept(IClient client) {
-		getLogger().info("onConnectAccept: " + client.getClientId());
-	}
-
-	public void onConnectReject(IClient client) {
-		getLogger().info("onConnectReject: " + client.getClientId());
-	}
-
-	public void onDisconnect(IClient client) {
-		getLogger().info("onDisconnect: " + client.getClientId());
-	}
-
-	public void onStreamCreate(IMediaStream stream) {
-		getLogger().info("onStreamCreate: " + stream.getSrc());
-	}
-
-	public void onStreamDestroy(IMediaStream stream) {
-		getLogger().info("onStreamDestroy: " + stream.getSrc());
-	}
-
-	public void onHTTPSessionCreate(IHTTPStreamerSession httpSession) {
-		getLogger().info("onHTTPSessionCreate: " + httpSession.getSessionId());
-	}
-	
-	public List<String> getRenditions(String streamName)
-	{
+	public List<String> getRenditions(String streamName, String formatStr)
+	{	
 		String baseName = streamName.substring(0, streamName.lastIndexOf('.'));
+		String extension = streamName.substring(streamName.lastIndexOf('.'), streamName.length());
+		
+		if(formatStr != "default"  && !formatStr.isEmpty()) { baseName += "_" + formatStr; }
+		
 		List<String> files = new ArrayList<String>();
-		
 		File streamFile = new File(this.appIns.getStreamStorageDir() + "/" + streamName);
-		
+
 		if(streamFile.exists() && streamFile.isFile())
 		{
 			File storageDir = new File(this.appIns.getStreamStorageDir());
 		
 			for(File file: storageDir.listFiles())
-			{
-				if(file.getName().startsWith(baseName))
+			{	
+				if(file.getName().startsWith(baseName) && file.getName().endsWith(extension))
 				{
-					files.add(file.getName());
+					files.add(file.getName());		
 				}
 			}
 		}
@@ -138,7 +131,7 @@ public class DynamicAMLST extends ModuleBase {
 		IHTTPStreamerCupertinoIndex indexer = null;
 		indexer = new HTTPStreamerCupertinoIndexFile();
 					
-		mediaReader.indexFile(indexer);			
+		mediaReader.indexFile(indexer);		
 		mediaReader.close();
 
 		return indexer;
